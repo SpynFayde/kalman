@@ -127,3 +127,15 @@ func main() {
 }
 
 ```
+
+![ukf-out](./example/ukf/out.png)
+
+### Cubature Kalman Filter
+
+```go
+	// Unscented Kalman Filter Example
+	// ...
+	kf := kalman.NewCubatureKalmanFilter(dimX, dimZ, dt, fx, hx)
+```
+
+![ckf-out](./example/ckf/out.png)

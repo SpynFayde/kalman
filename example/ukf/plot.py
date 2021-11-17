@@ -14,7 +14,7 @@ print(data)
 
 plt.plot(data[:, 0], data[:, 1], label="Track")
 plt.plot(data[:, 2], data[:, 3], marker=".", label="Measure")
-plt.plot(data[:, 4], data[:, 5], marker="*", label="Kalman")
+plt.plot(data[:, 4], data[:, 5], marker="*", label="UKF")
 plt.title("Unscented Kalman Filter")
 plt.legend(loc=2)
 plt.tight_layout()
