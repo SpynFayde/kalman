@@ -77,8 +77,7 @@ func main() {
 }
 ```
 
-
-
+![kalman-out](./example/kalman/out.png)
 
 
 
