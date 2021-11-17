@@ -6,112 +6,163 @@ import (
 	mat "github.com/mrfyo/matrix"
 )
 
-type CubatureKalmanFilter struct {
-	DimX   int       // n
-	DimZ   int       // m
-	Dt     float64   // collect duration
-	Fx     FilterFun // (n, 1)
-	Hx     FilterFun // (m, 1)
-	X      Matrix    // (n, 1)
-	P      Matrix    // (n, n)
-	R      Matrix    // (m, n)
-	Q      Matrix    // (n, n)
-	PriorX Matrix    // (n, 1)
-	PriorP Matrix    // (n, n)
+type UnscentedKalmanFilter struct {
+	DimX        int       // n
+	DimZ        int       // m
+	Dt          float64   // collect duration
+	Fx          FilterFun // (n, 1)
+	Hx          FilterFun // (m, 1)
+	X           Matrix    // (n, 1)
+	P           Matrix    // (n, n)
+	R           Matrix    // (m, n)
+	Q           Matrix    // (n, n)
+	PriorX      Matrix    // (n, 1)
+	PriorP      Matrix    // (n, n)
+	Wm          Matrix    // (1, 2*n+1)
+	Wc          Matrix    // (1, 2*n+1)
+	SigmaXs     Matrix    // (n, 2*n+1)
+	SigmaParams []float64 //(alpha, kappa, beta)
 }
 
-func (kf *CubatureKalmanFilter) Init(x, P, Q, R Matrix) {
+func (kf *UnscentedKalmanFilter) Init(x, P, Q, R Matrix) {
 	kf.X = x
 	kf.P = P
 	kf.Q = Q
 	kf.R = R
+	kf.SigmaParams = []float64{0.1, 0, 2.0}
+	kf.Wm, kf.Wc = kf.computeSigmaWeights(x, P)
 }
 
-// computeSigmaPoints 计算样本点
-func (kf *CubatureKalmanFilter) computeSigmaPoints(x Matrix, P Matrix) (sigmas Matrix) {
+func (kf *UnscentedKalmanFilter) computeSigmaWeights(x, P Matrix) (Wm, Wc Matrix) {
 	n := kf.DimX
+	alpha := kf.SigmaParams[0]
+	kappa := kf.SigmaParams[1]
+	beta := kf.SigmaParams[2]
 
-	sigmas = mat.Zeros(Shape{Row: n, Col: 2 * n})
+	nf := float64(n)
+	_lambda := (alpha*alpha)*(nf+kappa) - nf
 
-	_, U := mat.Cholesky(P)
+	m := 2*n + 1
+	c := 0.5 / (nf + _lambda)
+	Wm = mat.Full(Shape{Row: 1, Col: m}, c)
+	Wc = mat.Full(Shape{Row: 1, Col: m}, c)
 
-	S := U.ScaleMul(math.Sqrt(float64(n)))
+	Wm.Set(0, 0, _lambda/(nf+_lambda))
+	Wc.Set(0, 0, _lambda/(nf+_lambda)+(1-alpha*alpha+beta))
 
+	return
+}
+
+func (kf *UnscentedKalmanFilter) computeSigmaPoints(x, P Matrix) (sigmas Matrix) {
+	n := kf.DimX
+	alpha := kf.SigmaParams[0]
+	kappa := kf.SigmaParams[1]
+
+	m := 2*n + 1
+	sigmas = mat.Zeros(Shape{Row: n, Col: m}) // (n, 2*n+1)
+	sigmas.SetCol(0, x)
+
+	_lambda := (alpha*alpha)*(float64(n)+kappa) - float64(n)
+
+	L, _ := mat.Cholesky(P)
+	s := math.Sqrt(_lambda + float64(n))
+	S := L.ScaleMul(s)
+
+	sigmas.SetCol(0, x)
 	for k := 0; k < n; k++ {
-		sigmas.SetCol(k, x.Add(S.GetCol(k)))
-		sigmas.SetCol(k+n, x.Sub(S.GetCol(k)))
+		Sk := S.GetCol(k)
+		sigmas.SetCol(k+1, x.Sub(Sk))
+		sigmas.SetCol(k+n+1, x.Add(Sk))
 	}
 
-	return sigmas
+	return
 }
 
-func (kf *CubatureKalmanFilter) Predict() {
+func (kf *UnscentedKalmanFilter) Predict() {
 	n := kf.DimX
 	x := kf.X
 	P := kf.P
 	Q := kf.Q
+	Wm := kf.Wm
+	Wc := kf.Wc
 
-	sigmas := kf.computeSigmaPoints(x, P)
-	priorX := mat.Zeros(x.Shape)
-	priorP := mat.Zeros(P.Shape)
+	sigmas := kf.computeSigmaPoints(x, P) // (2*n+1, n)
+	count := sigmas.Col
 
-	for j := 0; j < sigmas.Col; j++ {
-		xk := kf.Fx(kf.Dt, sigmas.GetCol(j))
-		mat.MatrixAdd(priorX, xk)
-		mat.MatrixAdd(priorP, xk.Dot(xk.T()))
+	sigmaXs := mat.Zeros(sigmas.Shape) // (2*n+1, n)
+	for j := 0; j < count; j++ {
+		Y := kf.Fx(kf.Dt, sigmas.GetCol(j))
+		sigmaXs.SetCol(j, Y)
 	}
 
-	wn := 1.0 / float64(2*n)
+	priorX := mat.Zeros(Shape{Row: n, Col: 1})
+	for j := 0; j < count; j++ {
+		for i := 0; i < sigmaXs.Row; i++ {
+			v := sigmaXs.Get(i, j)*Wm.Get(0, j) + priorX.Get(i, 0)
+			priorX.Set(i, 0, v)
+		}
+	}
 
-	priorX = priorX.ScaleMul(wn)
-	priorP = priorP.ScaleMul(wn).Sub(priorX.Dot(priorX.T())).Add(Q)
+	priorP := Q.Copy() // (n, n)
+	for j := 0; j < count; j++ {
+		diffX := sigmaXs.GetCol(j).Sub(priorX) // (n, 1)
+		w := Wc.Get(0, j)
+		mat.MatrixAdd(priorP, diffX.Dot(diffX.T()).ScaleMul(w))
+	}
 
 	kf.PriorX = priorX
 	kf.PriorP = priorP
+	kf.SigmaXs = sigmaXs
+
 }
 
-func (kf *CubatureKalmanFilter) Update(z Matrix) Matrix {
-	n := kf.DimX
-	m := kf.DimZ
+func (kf *UnscentedKalmanFilter) Update(z Matrix) Matrix {
+	n, m, Wm, Wc := kf.DimX, kf.DimZ, kf.Wm, kf.Wc
 	R := kf.R
-	priorX := kf.PriorX
-	priorP := kf.PriorP
-	sigmas := kf.computeSigmaPoints(priorX, priorP) // (n, 2*n)
+	priorX := kf.PriorX   // (n, 1)
+	priorP := kf.PriorP   // (n, n)
+	sigmaXs := kf.SigmaXs // (n, 2*n+1)
 
-	Pzz := mat.Zeros(R.Shape)                  // (m, m)
-	Pxz := mat.Zeros(Shape{Row: n, Col: m})    // (n, m)
-	priorZ := mat.Zeros(Shape{Row: m, Col: 1}) // (m, 1)
-
-	for k := 0; k < sigmas.Col; k++ {
-		xk := sigmas.GetCol(k) // (n, 1)
-		zk := kf.Hx(kf.Dt, xk) // (m, 1)
-		zkT := zk.T()          // (1, m)
-		mat.MatrixAdd(priorZ, zk)
-		mat.MatrixAdd(Pzz, zk.Dot(zkT))
-		mat.MatrixAdd(Pxz, xk.Dot(zkT))
+	count := sigmaXs.Col
+	sigmaZs := mat.Zeros(Shape{
+		Row: m,
+		Col: count,
+	})
+	for j := 0; j < count; j++ {
+		sigmaZs.SetCol(j, kf.Hx(kf.Dt, sigmaXs.GetCol(j)))
 	}
-	wn := 1.0 / float64(2*n)
 
-	priorZ = priorZ.ScaleMul(wn)
+	priorZ := mat.Zeros(Shape{Row: m, Col: 1})
+	for j := 0; j < count; j++ {
+		w := Wm.Get(0, j)
+		mat.MatrixAdd(priorZ, sigmaZs.GetCol(j).ScaleMul(w))
+	}
 
-	priorZT := priorZ.T()
-	Pzz = Pzz.ScaleMul(wn).Sub(priorZ.Dot(priorZT)).Add(R)
-	Pxz = Pxz.ScaleMul(wn).Sub(priorX.Dot(priorZT))
+	Pzz := R.Copy()                         // (m, m)
+	Pxz := mat.Zeros(Shape{Row: n, Col: m}) // (n, m)
 
-	K := Pxz.Dot(mat.Inv(Pzz))             // (n, m)
-	X := priorX.Add(K.Dot(z.Sub(priorZ)))  // (n, 1)
-	P := priorP.Sub(K.Dot(Pzz).Dot(K.T())) // (n, n)
+	for j := 0; j < count; j++ {
+		w := Wc.Get(0, j)
+		diffZ := sigmaZs.GetCol(j).Sub(priorZ) // (m, 1)
+		mat.MatrixAdd(Pzz, diffZ.Dot(diffZ.T()).ScaleMul(w))
+		diffX := sigmaXs.GetCol(j).Sub(priorX) // (n, 1)
+		mat.MatrixAdd(Pxz, diffX.Dot(diffZ.T()).ScaleMul(w))
+	}
+
+	K := Pxz.Dot(mat.Inv(Pzz)) // (n, m)
+	X := priorX.Add(K.Dot(z.Sub(priorZ)))
+	P := priorP.Sub(K.Dot(Pzz).Dot(K.T()))
 
 	kf.X = X
 	kf.P = P
 	return X
 }
 
-func NewCubatureKalmanFilter(dimX int, dimZ int, dt float64, Fx FilterFun, Hx FilterFun) *CubatureKalmanFilter {
+func NewUnscentedKalmanFilter(dimX int, dimZ int, dt float64, Fx FilterFun, Hx FilterFun) *UnscentedKalmanFilter {
 	shapeX := Shape{Row: dimX, Col: dimX}
 	shapeZ := Shape{Row: dimZ, Col: dimZ}
 
-	return &CubatureKalmanFilter{
+	return &UnscentedKalmanFilter{
 		DimX:   dimX,
 		DimZ:   dimZ,
 		Dt:     dt,
