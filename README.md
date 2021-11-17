@@ -80,4 +80,50 @@ func main() {
 ![kalman-out](./example/kalman/out.png)
 
 
+### Unscented Kalman Filter
 
+```go
+func main() {
+	dimX := 4
+	dimZ := 2
+	dt := 1.0
+
+	QStd := 0.001
+	RStd := 0.4
+
+	fx := func(dt float64, X matrix.Matrix) matrix.Matrix {
+		F := matrix.Builder().Row().
+			Link(1, dt, 0, 0).
+			Link(0, 1, 0, 0).
+			Link(0, 0, 1, dt).
+			Link(0, 0, 0, 1).Build()
+
+		return F.Dot(X)
+	}
+
+	hx := func(dt float64, X matrix.Matrix) matrix.Matrix {
+		H := matrix.Builder().Row().
+			Link(1, 0, 0, 0).
+			Link(0, 0, 1, 0).Build()
+
+		return H.Dot(X)
+	}
+
+	X := matrix.Builder().Col().Link(0, 1, 0, 0.5).Build()
+
+	P := matrix.Diag([]float64{10, 4, 10, 4})
+
+	Q := matrix.Builder().Row().
+		Link(0.25*math.Pow(dt, 4), 0.5*math.Pow(dt, 3), 0, 0).
+		Link(0.5*math.Pow(dt, 3), dt*dt, 0, 0).
+		Link(0, 0, 0.25*math.Pow(dt, 4), 0.5*math.Pow(dt, 3)).
+		Link(0, 0, 0.5*math.Pow(dt, 3), dt*dt).Build().
+		ScaleMul(QStd)
+
+	R := matrix.Eye(dimZ).ScaleMul(RStd * RStd)
+
+	kf := kalman.NewUnscentedKalmanFilter(dimX, dimZ, dt, fx, hx)
+	kf.Init(X, P, Q, R)
+}
+
+```

@@ -116,7 +116,7 @@ func (kf *UnscentedKalmanFilter) Predict() {
 
 }
 
-func (kf *UnscentedKalmanFilter) Update(z Matrix) {
+func (kf *UnscentedKalmanFilter) Update(z Matrix) Matrix {
 	n, m, Wm, Wc := kf.DimX, kf.DimZ, kf.Wm, kf.Wc
 	R := kf.R
 	priorX := kf.PriorX   // (n, 1)
@@ -155,6 +155,7 @@ func (kf *UnscentedKalmanFilter) Update(z Matrix) {
 
 	kf.X = X
 	kf.P = P
+	return X
 }
 
 func NewUnscentedKalmanFilter(dimX int, dimZ int, dt float64, Fx FilterFun, Hx FilterFun) *UnscentedKalmanFilter {

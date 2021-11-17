@@ -33,9 +33,9 @@ func (kf *CubatureKalmanFilter) computeSigmaPoints(x Matrix, P Matrix) (sigmas M
 
 	sigmas = mat.Zeros(Shape{Row: n, Col: 2 * n})
 
-	_, L := mat.Cholesky(P)
+	_, U := mat.Cholesky(P)
 
-	S := L.ScaleMul(math.Sqrt(float64(n)))
+	S := U.ScaleMul(math.Sqrt(float64(n)))
 
 	for k := 0; k < n; k++ {
 		sigmas.SetCol(k, x.Add(S.GetCol(k)))
@@ -70,7 +70,7 @@ func (kf *CubatureKalmanFilter) Predict() {
 	kf.PriorP = priorP
 }
 
-func (kf *CubatureKalmanFilter) Update(z Matrix) {
+func (kf *CubatureKalmanFilter) Update(z Matrix) Matrix {
 	n := kf.DimX
 	m := kf.DimZ
 	R := kf.R
@@ -104,6 +104,7 @@ func (kf *CubatureKalmanFilter) Update(z Matrix) {
 
 	kf.X = X
 	kf.P = P
+	return X
 }
 
 func NewCubatureKalmanFilter(dimX int, dimZ int, dt float64, Fx FilterFun, Hx FilterFun) *CubatureKalmanFilter {

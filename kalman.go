@@ -14,7 +14,7 @@ type Filter interface {
 	Update(z Matrix) (X Matrix)
 }
 
-type FilterFun func(dt float64, v ...interface{}) Matrix
+type FilterFun func(dt float64, X Matrix) Matrix
 
 type LinearKalmanFilter struct {
 	DimX   int
