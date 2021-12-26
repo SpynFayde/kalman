@@ -14,7 +14,7 @@ type CubatureKalmanFilter struct {
 	Hx     FilterFun // (m, 1)
 	X      Matrix    // (n, 1)
 	P      Matrix    // (n, n)
-	R      Matrix    // (m, n)
+	R      Matrix    // (m, m)
 	Q      Matrix    // (n, n)
 	PriorX Matrix    // (n, 1)
 	PriorP Matrix    // (n, n)

@@ -14,7 +14,7 @@ type UnscentedKalmanFilter struct {
 	Hx          FilterFun // (m, 1)
 	X           Matrix    // (n, 1)
 	P           Matrix    // (n, n)
-	R           Matrix    // (m, n)
+	R           Matrix    // (m, m)
 	Q           Matrix    // (n, n)
 	PriorX      Matrix    // (n, 1)
 	PriorP      Matrix    // (n, n)
@@ -30,10 +30,10 @@ func (kf *UnscentedKalmanFilter) Init(x, P, Q, R Matrix) {
 	kf.Q = Q
 	kf.R = R
 	kf.SigmaParams = []float64{0.1, 0, 2.0}
-	kf.Wm, kf.Wc = kf.computeSigmaWeights(x, P)
+	kf.Wm, kf.Wc = kf.computeSigmaWeights()
 }
 
-func (kf *UnscentedKalmanFilter) computeSigmaWeights(x, P Matrix) (Wm, Wc Matrix) {
+func (kf *UnscentedKalmanFilter) computeSigmaWeights() (Wm, Wc Matrix) {
 	n := kf.DimX
 	alpha := kf.SigmaParams[0]
 	kappa := kf.SigmaParams[1]
@@ -86,17 +86,17 @@ func (kf *UnscentedKalmanFilter) Predict() {
 	Wm := kf.Wm
 	Wc := kf.Wc
 
-	sigmas := kf.computeSigmaPoints(x, P) // (2*n+1, n)
-	count := sigmas.Col
+	sigmas := kf.computeSigmaPoints(x, P) // (n, 2*n+1)
+	c := sigmas.Col
 
-	sigmaXs := mat.Zeros(sigmas.Shape) // (2*n+1, n)
-	for j := 0; j < count; j++ {
+	sigmaXs := mat.Zeros(sigmas.Shape) // (n, 2*n+1)
+	for j := 0; j < c; j++ {
 		Y := kf.Fx(kf.Dt, sigmas.GetCol(j))
 		sigmaXs.SetCol(j, Y)
 	}
 
 	priorX := mat.Zeros(Shape{Row: n, Col: 1})
-	for j := 0; j < count; j++ {
+	for j := 0; j < c; j++ {
 		for i := 0; i < sigmaXs.Row; i++ {
 			v := sigmaXs.Get(i, j)*Wm.Get(0, j) + priorX.Get(i, 0)
 			priorX.Set(i, 0, v)
@@ -104,7 +104,7 @@ func (kf *UnscentedKalmanFilter) Predict() {
 	}
 
 	priorP := Q.Copy() // (n, n)
-	for j := 0; j < count; j++ {
+	for j := 0; j < c; j++ {
 		diffX := sigmaXs.GetCol(j).Sub(priorX) // (n, 1)
 		w := Wc.Get(0, j)
 		mat.MatrixAdd(priorP, diffX.Dot(diffX.T()).ScaleMul(w))
