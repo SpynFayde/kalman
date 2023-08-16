@@ -22,6 +22,7 @@ type UnscentedKalmanFilter struct {
 	Wc          Matrix    // (1, 2*n+1)
 	SigmaXs     Matrix    // (n, 2*n+1)
 	SigmaParams []float64 //(alpha, kappa, beta)
+	S           Matrix    // System uncertainty
 }
 
 func (kf *UnscentedKalmanFilter) Init(x, P, Q, R Matrix) {
@@ -153,6 +154,7 @@ func (kf *UnscentedKalmanFilter) Update(z Matrix) Matrix {
 	X := priorX.Add(K.Dot(z.Sub(priorZ)))
 	P := priorP.Sub(K.Dot(Pzz).Dot(K.T()))
 
+	kf.S = Pzz
 	kf.X = X
 	kf.P = P
 	return X
