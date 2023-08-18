@@ -8,7 +8,7 @@ import (
 	"math/rand"
 	"strings"
 
-	"github.com/mrfyo/kalman"
+	"github.com/SpynFayde/kalman"
 	"github.com/mrfyo/matrix"
 )
 

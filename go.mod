@@ -1,4 +1,4 @@
-module github.com/mrfyo/kalman
+module github.com/SpynFayde/kalman
 
 go 1.16
 
