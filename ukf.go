@@ -166,6 +166,9 @@ func (kf *UnscentedKalmanFilter) Update(z Matrix) Matrix {
 	return X
 }
 
+// Adapt uses system uncertainty to adjust process noise by a scale factor
+// as it determines a maneuver has been made based on a factor of standard
+// deviation of the system uncertainty
 func (kf *UnscentedKalmanFilter) Adapt(dt, stdScale, qScaleFactor float64) {
 	y := kf.Y
 	s := kf.S
