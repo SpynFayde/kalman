@@ -1,6 +1,7 @@
 package kalman
 
 import (
+	"errors"
 	"math"
 
 	mat "github.com/mrfyo/matrix"
@@ -23,6 +24,9 @@ type UnscentedKalmanFilter struct {
 	SigmaXs     Matrix    // (n, 2*n+1)
 	SigmaParams []float64 //(alpha, kappa, beta)
 	S           Matrix    // System uncertainty
+	Y           Matrix    // Residual
+	adaptations []int
+	phi         []float64
 }
 
 func (kf *UnscentedKalmanFilter) Init(x, P, Q, R Matrix) {
@@ -151,30 +155,112 @@ func (kf *UnscentedKalmanFilter) Update(z Matrix) Matrix {
 	}
 
 	K := Pxz.Dot(mat.Inv(Pzz)) // (n, m)
-	X := priorX.Add(K.Dot(z.Sub(priorZ)))
+	Y := z.Sub(priorZ)
+	X := priorX.Add(K.Dot(Y))
 	P := priorP.Sub(K.Dot(Pzz).Dot(K.T()))
 
 	kf.S = Pzz
+	kf.Y = Y
 	kf.X = X
 	kf.P = P
 	return X
 }
 
+func (kf *UnscentedKalmanFilter) Adapt(dt, stdScale, qScaleFactor float64) {
+	y := kf.Y
+	s := kf.S
+
+	// System uncertainty has multiple dimensions of data -- adapt per dimension
+	for i := 0; i < kf.DimZ; i++ {
+		std := math.Sqrt(s.Get(i, i))
+
+		if math.Abs(y.GetIndex(0)) > stdScale*std {
+			kf.phi[i] += qScaleFactor
+			kf.Q, _ = QDiscreteWhiteNoise(2, dt, kf.phi[i], 1, true)
+			kf.adaptations[i] += 1
+		} else if kf.adaptations[i] > 0 {
+			kf.phi[i] -= qScaleFactor
+			kf.Q, _ = QDiscreteWhiteNoise(2, dt, kf.phi[i], 1, true)
+			kf.adaptations[i] -= 1
+		}
+	}
+}
+
+func OrderByDerivative(q []float64, dim int, blockSize int) mat.Matrix {
+	N := dim * blockSize
+	D := mat.Zeros(mat.Shape{Row: N, Col: N})
+	for i, x := range q {
+		f := mat.Eye(blockSize).ScaleMul(x)
+
+		ix, iy := (i/dim)*blockSize, (i%dim)*blockSize
+		for fi := 0; fi < f.Row; fi++ {
+			for fj := 0; fj < f.Col; fj++ {
+				D.Set(ix+fi, iy+fj, f.Get(fi, fj))
+			}
+		}
+	}
+	return D
+}
+
+func QDiscreteWhiteNoise(dim int, dt float64, variance float64, blockSize int, orderByDim bool) (mat.Matrix, error) {
+	if dim != 2 && dim != 3 && dim != 4 {
+		return mat.Zeros(mat.Shape{Row: dim, Col: dim}), errors.New("dim must be between 2 and 4")
+	}
+
+	var Q []float64
+	switch dim {
+	case 2:
+		Q = []float64{
+			0.25 * math.Pow(dt, 4), 0.5 * math.Pow(dt, 3),
+			0.5 * math.Pow(dt, 3), math.Pow(dt, 2),
+		}
+	case 3:
+		Q = []float64{
+			0.25 * math.Pow(dt, 4), 0.5 * math.Pow(dt, 3), 0.5 * math.Pow(dt, 2),
+			0.5 * math.Pow(dt, 3), math.Pow(dt, 2), dt,
+			0.5 * math.Pow(dt, 2), dt, 1,
+		}
+	default:
+		Q = []float64{
+			math.Pow(dt, 6) / 36, math.Pow(dt, 5) / 12, math.Pow(dt, 4) / 6, math.Pow(dt, 3) / 6,
+			math.Pow(dt, 5) / 12, math.Pow(dt, 4) / 4, math.Pow(dt, 3) / 2, math.Pow(dt, 2) / 2,
+			math.Pow(dt, 4) / 6, math.Pow(dt, 3) / 2, math.Pow(dt, 2), dt,
+			math.Pow(dt, 3) / 6, math.Pow(dt, 2) / 2, dt, 1,
+		}
+	}
+
+	if orderByDim {
+		res := mat.NewMatrix(mat.Shape{Row: dim, Col: dim}, Q)
+		res.ScaleMul(float64(blockSize) * variance)
+		return res, nil
+	}
+
+	res := OrderByDerivative(Q, dim, blockSize)
+	res.ScaleMul(variance)
+	return res, nil
+}
+
 func NewUnscentedKalmanFilter(dimX int, dimZ int, dt float64, Fx FilterFun, Hx FilterFun) *UnscentedKalmanFilter {
 	shapeX := Shape{Row: dimX, Col: dimX}
 	shapeZ := Shape{Row: dimZ, Col: dimZ}
+	phi := make([]float64, dimZ)
+	for x := range phi {
+		phi[x] = 0.02
+	}
 
 	return &UnscentedKalmanFilter{
-		DimX:   dimX,
-		DimZ:   dimZ,
-		Dt:     dt,
-		Fx:     Fx,
-		Hx:     Hx,
-		X:      mat.Zeros(shapeX),
-		P:      mat.Eye(dimX),
-		R:      mat.Zeros(shapeZ),
-		Q:      mat.Zeros(shapeX),
-		PriorX: mat.Zeros(shapeX),
-		PriorP: mat.Eye(dimX),
+		DimX:        dimX,
+		DimZ:        dimZ,
+		Dt:          dt,
+		Fx:          Fx,
+		Hx:          Hx,
+		X:           mat.Zeros(shapeX),
+		P:           mat.Eye(dimX),
+		R:           mat.Zeros(shapeZ),
+		Q:           mat.Zeros(shapeX),
+		PriorX:      mat.Zeros(shapeX),
+		PriorP:      mat.Eye(dimX),
+		phi:         phi,
+		adaptations: make([]int, dimZ),
 	}
 }
