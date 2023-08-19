@@ -264,6 +264,6 @@ func NewUnscentedKalmanFilter(dimX int, dimZ int, dt float64, Fx FilterFun, Hx F
 		PriorX:      mat.Zeros(shapeX),
 		PriorP:      mat.Eye(dimX),
 		phi:         phi,
-		adaptations: make([]int, dimZ),
+		Adaptations: make([]int, dimZ),
 	}
 }
