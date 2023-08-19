@@ -179,13 +179,13 @@ func (kf *UnscentedKalmanFilter) Adapt(dt, stdScale, qScaleFactor float64) {
 
 		if math.Abs(y.GetIndex(i)) > stdScale*std {
 			kf.phi[i] += qScaleFactor
-			noise, _ := QDiscreteWhiteNoise(kf.DimX, dt, kf.phi[i], 1, true)
-			kf.Q = BlockDiag(noise, noise, noise)
+			kf.Q, _ = QDiscreteWhiteNoise(kf.DimX, dt, kf.phi[i], 1, true)
+			// kf.Q = BlockDiag(noise, noise, noise)
 			kf.Adaptations[i] += 1
 		} else if kf.Adaptations[i] > 0 {
 			kf.phi[i] -= qScaleFactor
-			noise, _ := QDiscreteWhiteNoise(kf.DimX, dt, kf.phi[i], 1, true)
-			kf.Q = BlockDiag(noise, noise, noise)
+			kf.Q, _ = QDiscreteWhiteNoise(kf.DimX, dt, kf.phi[i], 1, true)
+			// kf.Q = BlockDiag(noise, noise, noise)
 			kf.Adaptations[i] -= 1
 		}
 	}
