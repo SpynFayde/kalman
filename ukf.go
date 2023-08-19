@@ -177,7 +177,7 @@ func (kf *UnscentedKalmanFilter) Adapt(dt, stdScale, qScaleFactor float64) {
 	for i := 0; i < kf.DimZ; i++ {
 		std := math.Sqrt(s.Get(i, i))
 
-		if math.Abs(y.GetIndex(0)) > stdScale*std {
+		if math.Abs(y.GetIndex(i)) > stdScale*std {
 			kf.phi[i] += qScaleFactor
 			kf.Q, _ = QDiscreteWhiteNoise(2, dt, kf.phi[i], 1, true)
 			kf.Adaptations[i] += 1
