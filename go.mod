@@ -1,4 +1,4 @@
-module github.com/SpynFayde/kalman v0.1.0
+module github.com/SpynFayde/kalman
 
 go 1.21.0
 
