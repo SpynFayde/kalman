@@ -25,7 +25,7 @@ type UnscentedKalmanFilter struct {
 	SigmaParams []float64 //(alpha, kappa, beta)
 	S           Matrix    // System uncertainty
 	Y           Matrix    // Residual
-	adaptations []int
+	Adaptations []int
 	phi         []float64
 }
 
@@ -180,11 +180,11 @@ func (kf *UnscentedKalmanFilter) Adapt(dt, stdScale, qScaleFactor float64) {
 		if math.Abs(y.GetIndex(0)) > stdScale*std {
 			kf.phi[i] += qScaleFactor
 			kf.Q, _ = QDiscreteWhiteNoise(2, dt, kf.phi[i], 1, true)
-			kf.adaptations[i] += 1
-		} else if kf.adaptations[i] > 0 {
+			kf.Adaptations[i] += 1
+		} else if kf.Adaptations[i] > 0 {
 			kf.phi[i] -= qScaleFactor
 			kf.Q, _ = QDiscreteWhiteNoise(2, dt, kf.phi[i], 1, true)
-			kf.adaptations[i] -= 1
+			kf.Adaptations[i] -= 1
 		}
 	}
 }
