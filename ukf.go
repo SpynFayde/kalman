@@ -179,11 +179,13 @@ func (kf *UnscentedKalmanFilter) Adapt(dt, stdScale, qScaleFactor float64) {
 
 		if math.Abs(y.GetIndex(i)) > stdScale*std {
 			kf.phi[i] += qScaleFactor
-			kf.Q, _ = QDiscreteWhiteNoise(2, dt, kf.phi[i], 1, true)
+			noise, _ := QDiscreteWhiteNoise(kf.DimX, dt, kf.phi[i], 1, true)
+			kf.Q = BlockDiag(noise, noise, noise)
 			kf.Adaptations[i] += 1
 		} else if kf.Adaptations[i] > 0 {
 			kf.phi[i] -= qScaleFactor
-			kf.Q, _ = QDiscreteWhiteNoise(2, dt, kf.phi[i], 1, true)
+			noise, _ := QDiscreteWhiteNoise(kf.DimX, dt, kf.phi[i], 1, true)
+			kf.Q = BlockDiag(noise, noise, noise)
 			kf.Adaptations[i] -= 1
 		}
 	}
@@ -233,14 +235,41 @@ func QDiscreteWhiteNoise(dim int, dt float64, variance float64, blockSize int, o
 	}
 
 	if orderByDim {
-		res := mat.NewMatrix(mat.Shape{Row: dim, Col: dim}, Q)
-		res.ScaleMul(float64(blockSize) * variance)
+		QMat := mat.NewMatrix(mat.Shape{Row: dim, Col: dim}, Q)
+		QMat.ScaleMul(float64(blockSize))
+		res := BlockDiag(QMat)
+		res.ScaleMul(variance)
 		return res, nil
 	}
 
 	res := OrderByDerivative(Q, dim, blockSize)
 	res.ScaleMul(variance)
 	return res, nil
+}
+
+func BlockDiag(mats ...mat.Matrix) mat.Matrix {
+	w := 0
+	h := 0
+	for _, matrix := range mats {
+		mw, mh := matrix.Shape.Row, matrix.Shape.Col
+		w += mw
+		h += mh
+	}
+
+	newMatrix := mat.Zeros(mat.Shape{Row: w, Col: h})
+	w, h = 0, 0
+	for _, matrix := range mats {
+		mw, mh := matrix.Shape.Row, matrix.Shape.Col
+		for i := 0; i < mw; i++ {
+			for j := 0; j < mh; j++ {
+				newMatrix.Set(w+i, h+j, matrix.Get(i, j))
+			}
+		}
+		w += mw
+		h += mh
+	}
+
+	return newMatrix
 }
 
 func NewUnscentedKalmanFilter(dimX int, dimZ int, dt float64, Fx FilterFun, Hx FilterFun) *UnscentedKalmanFilter {
